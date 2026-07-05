@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoMoreLines - Patient Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F8FAFC; }</style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-6 space-y-6">
+        
+        <div class="text-center">
+            <h1 class="text-3xl font-extrabold text-blue-600">NoMoreLines</h1>
+            <p class="text-slate-500 text-sm font-medium mt-1">Ghar baithe live line tracking</p>
+        </div>
+
+        <div class="space-y-3 bg-blue-50/50 p-4 rounded-2xl border border-blue-100/60">
+            <select id="select-hospital" onchange="updateDoctorDropdown()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none">
+                <option value="">-- Choose Hospital --</option>
+            </select>
+            <select id="select-doctor" onchange="fetchLiveStatus()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none">
+                <option value="">-- Choose Doctor --</option>
+            </select>
+        </div>
+
+        <div id="live-display-panel" class="space-y-5 hidden">
+            
+            <div class="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100">
+                <div>
+                    <h2 id="doc-name" class="text-lg font-bold text-slate-800">Dr. --</h2>
+                    <p id="opd-time" class="text-xs text-slate-400 mt-0.5">🕒 OPD: -- </p>
+                </div>
+                <span id="doc-status" class="px-3 py-1.5 rounded-full text-xs font-bold bg-slate-200 text-slate-600">Checking...</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 text-center">
+                <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                    <p class="text-xs font-semibold text-blue-600 uppercase">Now Serving</p>
+                    <p id="current-token" class="text-4xl font-black text-blue-700 mt-1">0</p>
+                </div>
+                <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                    <p class="text-xs font-semibold text-slate-500 uppercase">Total Booked</p>
+                    <p id="total-tokens" class="text-4xl font-black text-slate-700 mt-1">0</p>
+                </div>
+            </div>
+
+            <div id="patient-form-block" class="space-y-2.5 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+                <p class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Patient Information</p>
+                <input id="p-name" type="text" placeholder="Patient Full Name" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none">
+                <input id="p-age" type="number" placeholder="Patient Age" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none">
+                <input id="p-phone" type="text" placeholder="Patient Mobile Number" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none">
+            </div>
+
+            <div id="my-token-box" class="hidden bg-amber-50 border border-amber-100 rounded-2xl p-4 text-center">
+                <p class="text-xs font-semibold text-amber-700 uppercase">Aapka Token Number</p>
+                <p id="my-token-number" class="text-3xl font-black text-amber-800 mt-1">--</p>
+            </div>
+
+            <button id="book-btn" onclick="bookTokenInstant()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all cursor-pointer text-base">
+                Book Token Now
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        let allData = {}; let myToken = null;
+        // Global IP configuration for easy mobile connectivity
+        const SERVER_IP = "10.39.226.244"; 
+
+        async function loadHospitals() {
+            try {
+                const response = await fetch(`http://${SERVER_IP}:8000/get_all_hospitals`);
+                allData = await response.json();
+                const hDropdown = document.getElementById('select-hospital');
+                hDropdown.innerHTML = '<option value="">-- Choose Hospital --</option>';
+                for (let hName in allData) {
+                    hDropdown.innerHTML += `<option value="${hName}">${hName}</option>`;
+                }
+            } catch (e) { console.error("Hospitals load failed", e); }
+        }
+
+        function updateDoctorDropdown() {
+            const hName = document.getElementById('select-hospital').value;
+            const dDropdown = document.getElementById('select-doctor');
+            document.getElementById('live-display-panel').classList.add('hidden');
+            myToken = null;
+            
+            const btn = document.getElementById('book-btn');
+            btn.disabled = false;
+            btn.innerText = "Book Token Now";
+            btn.className = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all cursor-pointer text-base";
+            
+            document.getElementById('patient-form-block').classList.remove('hidden');
+            document.getElementById('my-token-box').classList.add('hidden');
+
+            if(!hName || !allData[hName]) { dDropdown.innerHTML = '<option value="">-- Choose Doctor --</option>'; return; }
+            dDropdown.innerHTML = '<option value="">-- Choose Doctor --</option>';
+            let doctors = allData[hName].doctors;
+            for(let dName in doctors) { dDropdown.innerHTML += `<option value="${dName}">Dr. ${dName}</option>`; }
+        }
+
+        async function fetchLiveStatus() {
+            const hName = document.getElementById('select-hospital').value;
+            const dName = document.getElementById('select-doctor').value;
+            if(!hName || !dName) return;
+
+            try {
+                const response = await fetch(`http://${SERVER_IP}:8000/get_doctor_status?hospital_name=${encodeURIComponent(hName)}&doctor_name=${encodeURIComponent(dName)}`);
+                const data = await response.json();
+                
+                document.getElementById('live-display-panel').classList.remove('hidden');
+                document.getElementById('doc-name').innerText = "Dr. " + dName;
+                document.getElementById('opd-time').innerText = "🕒 OPD: " + data.opd_time;
+                document.getElementById('current-token').innerText = data.current_token;
+                document.getElementById('total-tokens').innerText = data.total_tokens;
+
+                const statusBadge = document.getElementById('doc-status');
+                if (data.status === "Active") {
+                    statusBadge.innerText = "🟢 Active";
+                    statusBadge.className = "px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
+                } else {
+                    statusBadge.innerText = "🟡 On Break";
+                    statusBadge.className = "px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700";
+                }
+            } catch(e) { console.error("Live fetch failed", e); }
+        }
+
+        async function bookTokenInstant() {
+            if (myToken !== null) return;
+            const hName = document.getElementById('select-hospital').value;
+            const dName = document.getElementById('select-doctor').value;
+            const pName = document.getElementById('p-name').value.trim();
+            const pAge = document.getElementById('p-age').value.trim();
+            const pPhone = document.getElementById('p-phone').value.trim();
+
+            if(!hName || !dName || !pName || !pAge || !pPhone) { alert("Sari details bharna zaroori hai!"); return; }
+
+            try {
+                const url = `http://${SERVER_IP}:8000/book_token_dynamic?hospital_name=${encodeURIComponent(hName)}&doctor_name=${encodeURIComponent(dName)}&name=${encodeURIComponent(pName)}&age=${parseInt(pAge)}&phone=${encodeURIComponent(pPhone)}`;
+                const response = await fetch(url, {method: 'POST'});
+                const data = await response.json();
+
+                if(data.status === "success") {
+                    myToken = data.your_token;
+                    document.getElementById('my-token-number').innerText = "#" + myToken;
+                    document.getElementById('my-token-box').classList.remove('hidden');
+                    document.getElementById('patient-form-block').classList.add('hidden'); 
+                    
+                    const btn = document.getElementById('book-btn');
+                    btn.innerText = "Token Booked ✓";
+                    btn.disabled = true;
+                    btn.className = "w-full bg-slate-200 text-slate-400 font-bold py-4 rounded-2xl cursor-not-allowed text-base";
+                    fetchLiveStatus();
+                }
+            } catch(e) { alert("Booking failed. Server check kijiye!"); }
+        }
+
+        setInterval(fetchLiveStatus, 3000);
+        loadHospitals();
+    </script>
+</body>
+</html>

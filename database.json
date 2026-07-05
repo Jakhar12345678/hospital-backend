@@ -1,0 +1,14 @@
+{
+    "cities": {
+        "Jhunjhunu": {
+            "hospitals": {
+                "a": {
+                    "password": "123456",
+                    "phone": "99",
+                    "doctors": {}
+                }
+            }
+        }
+    },
+    "last_reset_date": "2026-07-03"
+}
