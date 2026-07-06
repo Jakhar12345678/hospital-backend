@@ -78,22 +78,25 @@ def parse_time_str(t_str: str):
             continue
     raise ValueError(f"Invalid time format: {t_str}")
 
-def get_doctor_shift_bounds(opd_timing_dict: dict):
-    now = datetime.now()
-    day_name = now.strftime("%A").lower()
-    shift_str = opd_timing_dict.get(day_name, "Closed")
+from datetime import datetime
 
-    if "closed" in shift_str.lower() or not shift_str.strip():
-        return None, None
-
+def get_doctor_shift_bounds(timing_str):
     try:
-        start_str, end_str = shift_str.split("-")
-        start_time = parse_time_str(start_str)
-        end_time = parse_time_str(end_str)
-        return start_time, end_time
-    except Exception:
-        return None, None
+        # timing_str format: "9AM - 2PM"
+        parts = timing_str.split("-")
+        start_str = parts[0].strip().upper()
+        end_str = parts[1].strip().upper()
 
+        def convert_to_time(time_str):
+            # '9AM' -> 09:00:00, '2PM' -> 14:00:00
+            return datetime.strptime(time_str, "%I%p").time()
+
+        start_time = convert_to_time(start_str)
+        end_time = convert_to_time(end_str)
+        return start_time, end_time
+    except Exception as e:
+        print(f"Error parsing time: {e}")
+        return None, None
 
 def is_booking_allowed(opd_timing_dict: dict) -> bool:
     try:
