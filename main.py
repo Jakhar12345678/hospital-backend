@@ -87,18 +87,44 @@ def get_doctor_shift_bounds(opd_timing_dict: dict):
     except Exception:
         return None, None
 
+
 def is_booking_allowed(opd_timing_dict: dict) -> bool:
-    start_time, end_time = get_doctor_shift_bounds(opd_timing_dict)
+    # 1. Aaj ka din pata karo (Monday=0, Sunday=6)
+    days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    today_name = days[datetime.now().weekday()]
+    
+    # 2. Aaj ke din ka timing nikalo
+    today_timing = opd_timing_dict.get(today_name, "closed").lower()
+    
+    if today_timing == "closed":
+        return False
+        
+    # 3. Time check karo
+    start_time, end_time = get_doctor_shift_bounds(today_timing)
     if not end_time:
         return False
+        
     current_time = datetime.now().time()
     return current_time <= end_time
 
 def is_reception_allowed(opd_timing_dict: dict) -> bool:
-    start_time, end_time = get_doctor_shift_bounds(opd_timing_dict)
+    # 1. Aaj ka din pata karo
+    days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    today_name = days[datetime.now().weekday()]
+    
+    # 2. Aaj ke din ka timing nikalo
+    today_timing = opd_timing_dict.get(today_name, "closed").lower()
+    
+    if today_timing == "closed":
+        return False
+        
+    # 3. Time bounds nikal kar check karo
+    start_time, end_time = get_doctor_shift_bounds(today_timing)
     if not start_time or not end_time:
         return False
+        
     current_time = datetime.now().time()
+    # 4. Check karo ki current time shift ke andar hai
     return start_time <= current_time <= end_time
 
 # --- PYDANTIC SCHEMAS ---
