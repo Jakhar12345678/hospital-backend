@@ -120,7 +120,7 @@ def is_booking_allowed(opd_timing_dict: dict) -> bool:
 def is_reception_allowed(opd_timing_dict: dict) -> bool:
     try:
         days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        today_name = days[get_ist_time().weekday()] # IST time use kiya
+        today_name = days[get_ist_time().weekday()]
         today_timing = opd_timing_dict.get(today_name, "closed").lower()
         
         if today_timing == "closed":
@@ -130,12 +130,7 @@ def is_reception_allowed(opd_timing_dict: dict) -> bool:
         if not start_time or not end_time:
             return False
             
-        # Reception sirf 9AM se 1PM ke beech kaam karega
         current_time = get_ist_time().time()
-        return start_time <= current_time <= end_time
-    except Exception:
-        return False
-        # 4. Current time shift ke beech mein hona chahiye
         return start_time <= current_time <= end_time
     except Exception as e:
         print(f"Error in reception logic: {e}")
@@ -285,7 +280,14 @@ async def book_token(patient: PatientModel):
     active_token_doc = await db.active_tokens.find_one({"id": daily_counter_key})
     current_live = active_token_doc["current"] if active_token_doc else 1
     
-    return {"status": "success", "token_no": token_no, "live_ongoing": current_live}
+    return {
+        "status": "success", 
+        "token_no": token_no, 
+        "live_ongoing": current_live,
+        "patient_name": p_dict.get("patient_name"),
+        "mobile": p_dict.get("mobile"),
+        "doctor_name": p_dict.get("doctor_name")
+    }
 
 @app.get("/api/patient/track/{mobile}")
 async def track_patient(mobile: str):
@@ -336,10 +338,11 @@ async def load_reception(auth: AuthReceptionModel):
 
 @app.post("/api/reception/action")
 async def reception_action(
+    action: str,
     city: str,
     hospital_name: str,
     doctor_name: str,
-    action: str,
+    
     target_token: Optional[int] = None,
 ):
     doctor = await db.doctors.find_one({
