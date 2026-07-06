@@ -237,13 +237,18 @@ async def delete_doctor(doctor_id: str):
 
 @app.post("/api/appointment/book")
 async def book_token(patient: PatientModel):
+    # 1. Pydantic model ko dictionary mein badlo
     p_dict = patient.model_dump()
     p_dict["city"] = p_dict["city"].lower()
+    
+    # 2. Time aur Date setup
     now = datetime.now()
     today_date = now.strftime("%Y-%m-%d")
     p_dict["created_at"] = now.isoformat()
     p_dict["month_year"] = now.strftime("%Y-%m")
     p_dict["booking_date"] = today_date
+    
+    # 3. Doctor dhundo
     doctor = await db.doctors.find_one({
         "city": p_dict["city"],
         "hospital_name": p_dict["hospital_name"],
@@ -252,23 +257,11 @@ async def book_token(patient: PatientModel):
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor profile not found!")
     
-    # ⏱️ TIME VALIDATION: Booking only during shift
+    # 4. Booking allow hai ya nahi?
     if not is_booking_allowed(doctor.get("opd_timing", {})):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Booking closed! Today's OPD shift for Dr. {p_dict['doctor_name']} has already ended.",
-        )
+        raise HTTPException(status_code=400, detail="Booking closed!")
 
-    existing_booking = await db.appointments.find_one({
-        "mobile": p_dict["mobile"],
-        "city": p_dict["city"],
-        "hospital_name": p_dict["hospital_name"],
-        "doctor_name": p_dict["doctor_name"],
-        "booking_date": today_date,
-    })
-    if existing_booking:
-        raise HTTPException(status_code=400, detail=f"A token already booked today!")
-
+    # 5. Token number generate karo
     base_key = f"{p_dict['city']}_{p_dict['hospital_name']}_{p_dict['doctor_name']}"
     daily_counter_key = f"{base_key}_{today_date}"
     
@@ -279,55 +272,67 @@ async def book_token(patient: PatientModel):
         return_document=True,
     )
     token_no = counter["seq"]
+    
+    # 6. Data save karo
     p_dict["token_no"] = token_no
     p_dict["status"] = "Unpaid"
     await db.appointments.insert_one(p_dict)
 
+    # 7. Response ke liye live status lao
     active_token_doc = await db.active_tokens.find_one({"id": daily_counter_key})
     current_live = active_token_doc["current"] if active_token_doc else 1
     
-   # ... (upar ka logic same rahega)
-    doc_avg_time = doctor.get("avg_time_per_patient", 5) 
-    wait_time = calculate_wait_time(token_no, current_live, doc_avg_time)
-    
+    # 8. Wait time calculation
+    avg_time = doctor.get("avg_time_per_patient", 5)
+    wait_time = max(0, (token_no - current_live) * avg_time)
+
     return {
         "status": "success", 
         "token_no": token_no, 
         "live_ongoing": current_live,
         "patient_name": p_dict.get("patient_name"),
         "mobile": p_dict.get("mobile"),
-        "specialist": p_dict.get("doctor_name"),
-        "est_wait": str(wait_time) 
+        "doctor_name": p_dict.get("doctor_name"),
+        "hospital_name": p_dict.get("hospital_name"),
+        "hospital_mobile": doctor.get("mobile", "N/A"),
+        "wait_time_mins": str(wait_time)
     }
-
 @app.get("/api/patient/track/{mobile}")
 async def track_patient(mobile: str):
+    # 1. Database se last booking uthao
     patient = await db.appointments.find_one({"mobile": mobile}, sort=[("_id", -1)])
     if not patient:
         raise HTTPException(status_code=404, detail="No active booking found!")
     
+    # 2. Doctor ka avg_time nikalne ke liye data fetch karo
+    doctor = await db.doctors.find_one({
+        "name": patient.get("doctor_name"), 
+        "hospital_name": patient.get("hospital_name")
+    })
+    doc_avg_time = doctor.get("avg_time_per_patient", 5) if doctor else 5
+    
+    # 3. Aaj ki live status nikalne ke liye key banao
     booking_date = patient.get("booking_date", datetime.now().strftime("%Y-%m-%d"))
     daily_counter_key = f"{patient['city']}_{patient['hospital_name']}_{patient['doctor_name']}_{booking_date}"
     
     active_token_doc = await db.active_tokens.find_one({"id": daily_counter_key})
     current_live = active_token_doc["current"] if active_token_doc else 1
     
-    # Doctor ka avg time nikalo
-    doctor = await db.doctors.find_one({"name": patient["doctor_name"], "hospital_name": patient["hospital_name"]})
-    doc_avg_time = doctor.get("avg_time_per_patient", 5) if doctor else 5
-    wait_time = calculate_wait_time(patient["token_no"], current_live, doc_avg_time)
+    # 4. Wait time calculation
+    # (Token No - Current Live) * Avg Time
+    diff = max(0, patient["token_no"] - current_live)
+    wait_time = diff * doc_avg_time
     
+    # 5. Sahi format mein response bhejo
     return {
         "status": "success",
-        "token_no": patient["token_no"],
+        "token_no": patient.get("token_no"),
         "live_ongoing": current_live,
-        "patient_name": patient.get("patient_name"),
-        "mobile": patient.get("mobile"),
-        "specialist": patient.get("doctor_name"),
-        "est_wait": str(wait_time),
-        "current_status": patient["status"],
-    
-        "current_status":  patient["status"],
+        "patient_name": patient.get("patient_name", "N/A"),
+        "mobile": patient.get("mobile", "N/A"),
+        "hospital_name": patient.get("hospital_name", "N/A"),
+        "wait_time_mins": str(wait_time),
+        "current_status": patient.get("status", "Unpaid")
     }
 
 @app.post("/api/reception/load")
