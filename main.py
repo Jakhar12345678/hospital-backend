@@ -1,6 +1,12 @@
 import asyncio
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+def get_ist_time():
+    IST = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(IST).time()
+
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -104,7 +110,7 @@ def is_booking_allowed(opd_timing_dict: dict) -> bool:
     if not end_time:
         return False
         
-    current_time = datetime.now().time()
+    current_time = get_ist_time()
     return current_time <= end_time
 
 def is_reception_allowed(opd_timing_dict: dict) -> bool:
@@ -123,7 +129,7 @@ def is_reception_allowed(opd_timing_dict: dict) -> bool:
     if not start_time or not end_time:
         return False
         
-    current_time = datetime.now().time()
+    current_time = get_ist_time()
     # 4. Check karo ki current time shift ke andar hai
     return start_time <= current_time <= end_time
 
