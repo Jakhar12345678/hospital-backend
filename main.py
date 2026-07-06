@@ -97,6 +97,12 @@ def get_doctor_shift_bounds(timing_str):
     except Exception as e:
         print(f"Error parsing time: {e}")
         return None, None
+def calculate_wait_time(token_no, live_ongoing, avg_time):
+    # Agar token_no 4 hai aur live status 1 hai, toh (4-1) = 3 log aage hain.
+    # 3 * avg_time = Total minutes.
+    diff = max(0, token_no - live_ongoing)
+    return diff * avg_time
+
 
 def is_booking_allowed(opd_timing_dict: dict) -> bool:
     try:
@@ -280,13 +286,18 @@ async def book_token(patient: PatientModel):
     active_token_doc = await db.active_tokens.find_one({"id": daily_counter_key})
     current_live = active_token_doc["current"] if active_token_doc else 1
     
+   # ... (upar ka logic same rahega)
+    doc_avg_time = doctor.get("avg_time_per_patient", 5) 
+    wait_time = calculate_wait_time(token_no, current_live, doc_avg_time)
+    
     return {
         "status": "success", 
         "token_no": token_no, 
         "live_ongoing": current_live,
         "patient_name": p_dict.get("patient_name"),
         "mobile": p_dict.get("mobile"),
-        "doctor_name": p_dict.get("doctor_name")
+        "specialist": p_dict.get("doctor_name"),
+        "est_wait": str(wait_time) 
     }
 
 @app.get("/api/patient/track/{mobile}")
@@ -294,18 +305,29 @@ async def track_patient(mobile: str):
     patient = await db.appointments.find_one({"mobile": mobile}, sort=[("_id", -1)])
     if not patient:
         raise HTTPException(status_code=404, detail="No active booking found!")
+    
     booking_date = patient.get("booking_date", datetime.now().strftime("%Y-%m-%d"))
     daily_counter_key = f"{patient['city']}_{patient['hospital_name']}_{patient['doctor_name']}_{booking_date}"
-    em_check = await db.emergencies.find_one({"id": daily_counter_key})
-    is_emergency = em_check.get("active", False) if em_check else False
+    
     active_token_doc = await db.active_tokens.find_one({"id": daily_counter_key})
     current_live = active_token_doc["current"] if active_token_doc else 1
+    
+    # Doctor ka avg time nikalo
+    doctor = await db.doctors.find_one({"name": patient["doctor_name"], "hospital_name": patient["hospital_name"]})
+    doc_avg_time = doctor.get("avg_time_per_patient", 5) if doctor else 5
+    wait_time = calculate_wait_time(patient["token_no"], current_live, doc_avg_time)
     
     return {
         "status": "success",
         "token_no": patient["token_no"],
         "live_ongoing": current_live,
-        "current_status": "🚨 EMERGENCY" if is_emergency else patient["status"],
+        "patient_name": patient.get("patient_name"),
+        "mobile": patient.get("mobile"),
+        "specialist": patient.get("doctor_name"),
+        "est_wait": str(wait_time),
+        "current_status": patient["status"],
+    
+        "current_status":  patient["status"],
     }
 
 @app.post("/api/reception/load")
