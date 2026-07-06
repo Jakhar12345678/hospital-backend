@@ -3,8 +3,9 @@ from bson import ObjectId
 from datetime import datetime, timedelta, timezone
 
 def get_ist_time():
+    # India Standard Time (UTC+5:30)
     IST = timezone(timedelta(hours=5, minutes=30))
-    return datetime.now(IST).time()
+    return datetime.now(IST)
 
 
 from fastapi import FastAPI, HTTPException, status
@@ -97,40 +98,40 @@ def get_doctor_shift_bounds(opd_timing_dict: dict):
 def is_booking_allowed(opd_timing_dict: dict) -> bool:
     try:
         days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        today_name = days[datetime.now().weekday()]
-        today_timing = opd_timing_dict.get(today_name, "closed").lower()
-
-        if today_timing == "closed":
-            return False
-
-        start_time, end_time = get_doctor_shift_bounds(today_timing)
-        if end_time is None: # Agar time nahi mila toh False return karo
-            return False
-
-        current_time = datetime.now().time()
-        return current_time <= end_time
-    except Exception as e:
-        print(f"Error in booking logic: {e}") # Yahan error print hoga
-        return False
-
-def is_reception_allowed(opd_timing_dict: dict) -> bool:
-    try:
-        # 1. Aaj ka din nikalo
-        days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        today_name = days[datetime.now().weekday()]
-        
-        # 2. Aaj ke din ka timing check karo
+        today_name = days[get_ist_time().weekday()] # IST time use kiya
         today_timing = opd_timing_dict.get(today_name, "closed").lower()
         
         if today_timing == "closed":
             return False
             
-        # 3. Time bounds check karo
+        start_time, end_time = get_doctor_shift_bounds(today_timing)
+        if not end_time:
+            return False
+            
+        # Sirf end_time check ho raha hai, toh 9AM se pehle allowed rahega
+        current_time = get_ist_time().time()
+        return current_time <= end_time
+    except Exception:
+        return False
+    
+def is_reception_allowed(opd_timing_dict: dict) -> bool:
+    try:
+        days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        today_name = days[get_ist_time().weekday()] # IST time use kiya
+        today_timing = opd_timing_dict.get(today_name, "closed").lower()
+        
+        if today_timing == "closed":
+            return False
+            
         start_time, end_time = get_doctor_shift_bounds(today_timing)
         if not start_time or not end_time:
             return False
             
-        current_time = datetime.now().time()
+        # Reception sirf 9AM se 1PM ke beech kaam karega
+        current_time = get_ist_time().time()
+        return start_time <= current_time <= end_time
+    except Exception:
+        return False
         # 4. Current time shift ke beech mein hona chahiye
         return start_time <= current_time <= end_time
     except Exception as e:
